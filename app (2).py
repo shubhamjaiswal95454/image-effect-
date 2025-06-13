@@ -2,13 +2,33 @@ import streamlit as st
 from PIL import Image, ImageEnhance, ImageFilter
 import io
 
-st.title("Advanced Image Converter")
+st.title("Fast & High-Quality Image Converter")
 
-# 1. Upload image
+def image_bytes_to_pil(file_bytes):
+    return Image.open(io.BytesIO(file_bytes))
+
+@st.cache_data(show_spinner=False)
+def process_image(image_bytes, op, params):
+    img = image_bytes_to_pil(image_bytes)
+    if op == "Grayscale":
+        img = img.convert("L")
+    elif op == "Rotate":
+        img = img.rotate(params["degree"], expand=True, resample=Image.BICUBIC)
+    elif op == "Resize":
+        img = img.resize((int(params["width"]), int(params["height"])), Image.LANCZOS)
+    elif op == "Enhance Sharpness":
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(params["factor"])
+    elif op == "Blur":
+        img = img.filter(ImageFilter.GaussianBlur(params["amount"]))
+    # No change for "None" or "Convert to PNG"
+    return img
+
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file)
+    file_bytes = uploaded_file.read()
+    image = image_bytes_to_pil(file_bytes)
     st.image(image, caption="Original Image", use_container_width=True)
 
     st.subheader("Choose an operation to perform:")
@@ -17,39 +37,28 @@ if uploaded_file:
         ("Grayscale", "Rotate", "Resize", "Enhance Sharpness", "Blur", "Convert to PNG", "None")
     )
 
-    new_img = image
-
-    # 2. Apply selected operation
-    if op == "Grayscale":
-        new_img = image.convert("L")
-    elif op == "Rotate":
-        degree = st.slider("Rotate by degrees:", 0, 360, 90)
-        new_img = image.rotate(degree, expand=True, resample=Image.BICUBIC)
+    params = {}
+    if op == "Rotate":
+        params["degree"] = st.slider("Rotate by degrees:", 0, 360, 90)
     elif op == "Resize":
-        width = st.number_input("Width:", min_value=1, value=image.width)
-        height = st.number_input("Height:", min_value=1, value=image.height)
-        new_img = image.resize((int(width), int(height)), Image.LANCZOS)
+        params["width"] = st.number_input("Width:", min_value=1, value=image.width)
+        params["height"] = st.number_input("Height:", min_value=1, value=image.height)
     elif op == "Enhance Sharpness":
-        factor = st.slider("Enhancement factor:", 1.0, 5.0, 2.0)
-        enhancer = ImageEnhance.Sharpness(image)
-        new_img = enhancer.enhance(factor)
+        params["factor"] = st.slider("Enhancement factor:", 1.0, 5.0, 2.0)
     elif op == "Blur":
-        amount = st.slider("Blur radius:", 1, 10, 2)
-        new_img = image.filter(ImageFilter.GaussianBlur(amount))
-    elif op == "Convert to PNG":
-        # We'll convert the image at download
-        pass
-    elif op == "None":
-        new_img = image
+        params["amount"] = st.slider("Blur radius:", 1, 10, 2)
 
-    # 3. Show processed image
+    if op != "Convert to PNG" and op != "None":
+        processed_img = process_image(file_bytes, op, params)
+    else:
+        processed_img = image
+
     st.subheader("Processed Image")
-    st.image(new_img, use_container_width=True)
+    st.image(processed_img, use_container_width=True)
 
-    # 4. Download high-quality result
     buf = io.BytesIO()
     output_format = "PNG" if op=="Convert to PNG" or uploaded_file.type=="image/png" else "JPEG"
-    new_img.save(buf, format=output_format, quality=100)
+    processed_img.save(buf, format=output_format, quality=95)
     byte_im = buf.getvalue()
 
     st.download_button(
